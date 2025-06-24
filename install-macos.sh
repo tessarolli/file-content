@@ -12,7 +12,7 @@ INSTALL_DIR="/usr/local/bin"
 echo "Installing to $INSTALL_DIR..."
 
 # Copy the binary
-sudo cp "bin/Release/net9.0/osx-x64/publish/file-contents" "$INSTALL_DIR/"
+sudo cp "src/bin/Release/net9.0/osx-x64/publish/file-contents" "$INSTALL_DIR/"
 
 # Make it executable
 sudo chmod +x "$INSTALL_DIR/file-contents"

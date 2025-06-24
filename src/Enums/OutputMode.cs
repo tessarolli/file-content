@@ -1,4 +1,4 @@
-namespace file_content;
+namespace file_content.Enums;
 
 /// <summary>
 /// Specifies the output destination for the file contents.

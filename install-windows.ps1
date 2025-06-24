@@ -17,7 +17,7 @@ if (-not (Test-Path -Path $installDir)) {
 
 # Copy the binary and other published files
 Write-Host "Installing to $installDir..."
-Copy-Item -Path "bin\Release\net9.0\win-x64\publish\*" -Destination $installDir -Recurse -Force
+Copy-Item -Path "src\bin\Release\net9.0\win-x64\publish\*" -Destination $installDir -Recurse -Force
 
 # Add the installation directory to the system's PATH
 $currentPath = [System.Environment]::GetEnvironmentVariable('PATH', 'Machine')
