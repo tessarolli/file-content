@@ -1,0 +1,24 @@
+# Visual Studio Code
+.vscode/
+
+# User-specific files
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Bb]in/
+[Oo]bj/
+
+# Rider
+.idea/
+
+# Mac
+.DS_Store
+
+# Nuget packages
+*.nupkg
+
+# dotnet temp files
+project.lock.json
+project.assets.json
