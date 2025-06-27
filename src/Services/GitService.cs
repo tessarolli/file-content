@@ -8,40 +8,60 @@ public class GitService(IConsoleService consoleService) : IGitService
 {
     private static readonly char[] Separator = ['\n', '\r'];
 
-    public async Task<List<string>> GetChangedFilesAsync(GitMode mode)
+    public async Task<List<string>> GetChangedFilesAsync(GitMode mode, string searchPath)
     {
+        if (mode == GitMode.None)
+        {
+            return [];
+        }
+
         var files = new List<string>();
         try
         {
-            var gitArgs = "";
-            switch (mode)
-            {
-                case GitMode.Changed:
-                    gitArgs = "ls-files --modified --others --exclude-standard";
-                    break;
-                case GitMode.Staged:
-                    gitArgs = "diff --name-only --cached";
-                    break;
-                case GitMode.All:
-                    gitArgs = "ls-files --modified --others --exclude-standard";
-                    var stagedOutput = await RunGitCommandAsync("diff --name-only --cached");
-                    files.AddRange(
-                        stagedOutput
-                            .Split(Separator, StringSplitOptions.RemoveEmptyEntries)
-                            .Select(line => line.Trim()));
+            var gitRoot = await GetGitRootAsync(searchPath);
+            var output = await RunGitCommandAsync("status --porcelain=v1", gitRoot);
+            var lines = output.Split(Separator, StringSplitOptions.RemoveEmptyEntries);
 
-                    break;
-                case GitMode.None:
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(mode), mode, null);
-            }
-
-            if (!string.IsNullOrEmpty(gitArgs))
+            foreach (var line in lines)
             {
-                var output = await RunGitCommandAsync(gitArgs);
-                files.AddRange(
-                    output.Split(Separator, StringSplitOptions.RemoveEmptyEntries).Select(line => line.Trim()));
+                var status = line.AsSpan(0, 2);
+                var path = line[3..];
+
+                var isStaged = !char.IsWhiteSpace(status[0]) && status[0] != '?';
+                var isUnstaged = !char.IsWhiteSpace(status[1]);
+                var isUntracked = status[0] == '?' && status[1] == '?';
+
+                var include = mode switch
+                {
+                    GitMode.All => isStaged || isUnstaged || isUntracked,
+                    GitMode.Staged => isStaged,
+                    GitMode.Changed => isUnstaged || isUntracked,
+                    _ => false,
+                };
+
+                if (!include)
+                {
+                    continue;
+                }
+
+                string finalPath;
+                if (status[0] == 'R' || status[1] == 'R')
+                {
+                    finalPath = path.Split(" -> ")[1];
+                }
+                else
+                {
+                    finalPath = path;
+                }
+
+                if (status[0] == 'D' || status[1] == 'D')
+                {
+                    files.Add($"{Path.Combine(gitRoot, finalPath)} (deleted)");
+                }
+                else
+                {
+                    files.Add(Path.Combine(gitRoot, finalPath));
+                }
             }
         }
         catch (Exception ex)
@@ -49,10 +69,16 @@ public class GitService(IConsoleService consoleService) : IGitService
             consoleService.WriteLine($"Error getting git files: {ex.Message}");
         }
 
-        return files;
+        return files.Distinct().ToList();
     }
 
-    private static async Task<string> RunGitCommandAsync(string arguments)
+    protected virtual async Task<string> GetGitRootAsync(string path)
+    {
+        var output = await RunGitCommandAsync("rev-parse --show-toplevel", path);
+        return output.Trim();
+    }
+
+    protected virtual async Task<string> RunGitCommandAsync(string arguments, string? workingDirectory = null)
     {
         var processStartInfo = new ProcessStartInfo
         {
@@ -62,6 +88,7 @@ public class GitService(IConsoleService consoleService) : IGitService
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
+            WorkingDirectory = workingDirectory ?? Directory.GetCurrentDirectory(),
         };
 
         using var process = new Process();
@@ -71,7 +98,9 @@ public class GitService(IConsoleService consoleService) : IGitService
         await process.WaitForExitAsync();
 
         if (process.ExitCode == 0)
+        {
             return output;
+        }
 
         var error = await process.StandardError.ReadToEndAsync();
         throw new Exception($"Git command failed with exit code {process.ExitCode}: {error}");

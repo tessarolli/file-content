@@ -4,5 +4,5 @@ namespace file_content.Abstractions;
 
 public interface IGitService
 {
-    Task<List<string>> GetChangedFilesAsync(GitMode mode);
+    Task<List<string>> GetChangedFilesAsync(GitMode mode, string searchPath);
 }

@@ -6,11 +6,11 @@ namespace file_content.UnitTests;
 
 public class AppRunnerTests
 {
-    private readonly Mock<IFileService> _fileServiceMock;
-    private readonly Mock<IGitService> _gitServiceMock;
+    private readonly AppRunner _appRunner;
     private readonly Mock<IClipboardService> _clipboardServiceMock;
     private readonly Mock<IConsoleService> _consoleServiceMock;
-    private readonly AppRunner _appRunner;
+    private readonly Mock<IFileService> _fileServiceMock;
+    private readonly Mock<IGitService> _gitServiceMock;
 
     public AppRunnerTests()
     {
@@ -57,13 +57,10 @@ public class AppRunnerTests
         const string fullPathToChangedFile = "/test/repo/changed.cs";
         var gitFiles = new List<string>
         {
-            "changed.cs",
+            fullPathToChangedFile,
         };
-        _gitServiceMock.Setup(g => g.GetChangedFilesAsync(GitMode.Changed)).ReturnsAsync(gitFiles);
-        _fileServiceMock.Setup(f => f.GetFullPath(Path.Combine(".", "changed.cs"))).Returns(fullPathToChangedFile);
-        _fileServiceMock.Setup(f => f.Exists(fullPathToChangedFile)).Returns(true);
-        _fileServiceMock.Setup(f => f.GetFileExtension(fullPathToChangedFile)).Returns(".cs");
-        _fileServiceMock.Setup(f => f.ReadAllTextAsync(fullPathToChangedFile)).ReturnsAsync("changed content");
+        _gitServiceMock.Setup(g => g.GetChangedFilesAsync(GitMode.Changed, It.IsAny<string>())).ReturnsAsync(gitFiles);
+        SetupFileMock(fullPathToChangedFile, "changed content");
 
         // Act
         await _appRunner.RunAsync(
@@ -74,7 +71,14 @@ public class AppRunnerTests
             GitMode.Changed);
 
         // Assert
-        _consoleServiceMock.Verify(c => c.WriteLine(It.Is<string>(s => s.Contains("changed content"))), Times.Once);
+        _consoleServiceMock.Verify(
+            c => c.WriteLine(
+                It.Is<string>(
+                    s =>
+                        s.Contains("--- Contents of /test/repo/changed.cs ---") &&
+                        s.Contains("changed content")
+                )),
+            Times.Once);
     }
 
     [Fact]
@@ -153,7 +157,9 @@ public class AppRunnerTests
         {
             "error.txt",
         };
-        _fileServiceMock.Setup(f => f.EnumerateFiles(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SearchOption>())).Returns(files);
+        _fileServiceMock
+            .Setup(f => f.EnumerateFiles(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SearchOption>()))
+            .Returns(files);
         _fileServiceMock.Setup(f => f.ReadAllTextAsync("error.txt")).ThrowsAsync(new Exception("Read error"));
 
         // Act
@@ -161,18 +167,24 @@ public class AppRunnerTests
             ".",
             false,
             OutputMode.Console,
-            new List<string> { "txt" },
+            new List<string>
+            {
+                "txt",
+            },
             GitMode.None);
 
         // Assert
-        _consoleServiceMock.Verify(c => c.WriteLine(It.Is<string>(s => s.Contains("Error reading file: Read error"))), Times.Once);
+        _consoleServiceMock.Verify(
+            c => c.WriteLine(It.Is<string>(s => s.Contains("Error reading file: Read error"))),
+            Times.Once);
     }
 
     [Fact]
     public async Task RunAsync_DirectoryNotFound_DisplaysErrorMessage()
     {
         // Arrange
-        _fileServiceMock.Setup(f => f.EnumerateFiles(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SearchOption>()))
+        _fileServiceMock
+            .Setup(f => f.EnumerateFiles(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<SearchOption>()))
             .Throws(new DirectoryNotFoundException("Directory not found"));
 
         // Act
@@ -194,7 +206,7 @@ public class AppRunnerTests
         var files = new List<string>
         {
             "file1.txt",
-            "file2.log"
+            "file2.log",
         };
         _fileServiceMock.Setup(f => f.EnumerateFiles(".", "*", SearchOption.TopDirectoryOnly)).Returns(files);
         _fileServiceMock.Setup(f => f.ReadAllTextAsync(It.IsAny<string>())).ReturnsAsync("some content");
@@ -216,14 +228,19 @@ public class AppRunnerTests
     public async Task RunAsync_GitModeWithNoChanges_ProcessesNoFiles()
     {
         // Arrange
-        _gitServiceMock.Setup(g => g.GetChangedFilesAsync(GitMode.Staged)).ReturnsAsync(new List<string>());
+        _gitServiceMock
+            .Setup(g => g.GetChangedFilesAsync(GitMode.Staged, It.IsAny<string>()))
+            .ReturnsAsync(new List<string>());
 
         // Act
         await _appRunner.RunAsync(
             ".",
             false,
             OutputMode.Console,
-            new List<string> { "cs" },
+            new List<string>
+            {
+                "cs",
+            },
             GitMode.Staged);
 
         // Assert
@@ -235,21 +252,83 @@ public class AppRunnerTests
     public async Task RunAsync_GitModeWithUnmatchedExtensions_ProcessesNoFiles()
     {
         // Arrange
-        var gitFiles = new List<string> { "file1.txt" };
-        _gitServiceMock.Setup(g => g.GetChangedFilesAsync(GitMode.Staged)).ReturnsAsync(gitFiles);
-        _fileServiceMock.Setup(f => f.Exists("path/to/file1.txt")).Returns(true);
-        _fileServiceMock.Setup(f => f.GetFullPath(It.IsAny<string>())).Returns("path/to/file1.txt");
+        var gitFiles = new List<string>
+        {
+            "/path/to/file1.txt",
+        };
+        _gitServiceMock.Setup(g => g.GetChangedFilesAsync(GitMode.Staged, It.IsAny<string>())).ReturnsAsync(gitFiles);
+        _fileServiceMock.Setup(f => f.Exists("/path/to/file1.txt")).Returns(true);
 
         // Act
         await _appRunner.RunAsync(
             ".",
             false,
             OutputMode.Console,
-            new List<string> { "cs" },
+            new List<string>
+            {
+                "cs",
+            },
             GitMode.Staged);
 
         // Assert
         _fileServiceMock.Verify(f => f.ReadAllTextAsync(It.IsAny<string>()), Times.Never);
         _consoleServiceMock.Verify(c => c.WriteLine(It.Is<string>(s => s.Contains("No files found"))), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunAsync_GitModeWithAllFileTypes_ProcessesCorrectly()
+    {
+        // Arrange
+        var gitFiles = new List<string>
+        {
+            "/mock/path/added.cs",
+            "/mock/path/modified.cs",
+            "/mock/path/deleted.cs (deleted)",
+            "/mock/path/renamed.cs",
+            "/mock/path/untracked.txt",
+        };
+        _gitServiceMock.Setup(g => g.GetChangedFilesAsync(GitMode.All, It.IsAny<string>())).ReturnsAsync(gitFiles);
+
+        SetupFileMock("/mock/path/added.cs", "added content");
+        SetupFileMock("/mock/path/modified.cs", "modified content");
+        SetupFileMock("/mock/path/renamed.cs", "renamed content");
+        SetupFileMock("/mock/path/untracked.txt", "untracked content");
+
+        // Act
+        await _appRunner.RunAsync(
+            ".",
+            false,
+            OutputMode.Console,
+            new List<string>
+            {
+                "cs",
+                "txt",
+            },
+            GitMode.All);
+
+        // Assert
+        _consoleServiceMock.Verify(
+            c => c.WriteLine(
+                It.Is<string>(
+                    s =>
+                        s.Contains("--- Contents of /mock/path/added.cs ---") &&
+                        s.Contains("added content") &&
+                        s.Contains("--- Contents of /mock/path/modified.cs ---") &&
+                        s.Contains("modified content") &&
+                        s.Contains("--- /mock/path/deleted.cs (deleted) ---") &&
+                        s.Contains("--- Contents of /mock/path/renamed.cs ---") &&
+                        s.Contains("renamed content") &&
+                        s.Contains("--- Contents of /mock/path/untracked.txt ---") &&
+                        s.Contains("untracked content")
+                )),
+            Times.Once);
+
+        _fileServiceMock.Verify(f => f.ReadAllTextAsync(It.Is<string>(p => p.Contains("deleted.cs"))), Times.Never);
+    }
+
+    private void SetupFileMock(string fullPath, string content)
+    {
+        _fileServiceMock.Setup(f => f.Exists(fullPath)).Returns(true);
+        _fileServiceMock.Setup(f => f.ReadAllTextAsync(fullPath)).ReturnsAsync(content);
     }
 }

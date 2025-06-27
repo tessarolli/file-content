@@ -4,12 +4,12 @@ using file_content.Services;
 namespace file_content;
 
 /// <summary>
-/// Main class for the file-content CLI tool.
+///     Main class for the file-content CLI tool.
 /// </summary>
-public class Program
+public static class Program
 {
     /// <summary>
-    /// Main entry point of the application.
+    ///     Main entry point of the application.
     /// </summary>
     /// <param name="args">Command-line arguments.</param>
     public static async Task Main(string[] args)
@@ -18,7 +18,10 @@ public class Program
         var folderPath = ".";
         var recursive = false;
         var output = OutputMode.Clipboard;
-        var extensions = new List<string> { "cs" };
+        var extensions = new List<string>
+        {
+            "cs",
+        };
         var gitMode = GitMode.None;
 
         // Parse command line arguments
@@ -67,12 +70,17 @@ public class Program
 
                 case "--git":
                 case "-g":
-                    if (i + 1 < args.Length)
+                    if (i + 1 < args.Length && !args[i + 1].StartsWith('-'))
                     {
                         if (Enum.TryParse<GitMode>(args[++i], true, out var mode))
                         {
                             gitMode = mode;
                         }
+                    }
+                    else
+                    {
+                        // Default to All mode when -g is specified without a value
+                        gitMode = GitMode.All;
                     }
 
                     break;
@@ -96,7 +104,7 @@ public class Program
     }
 
     /// <summary>
-    /// Displays the help message with usage instructions and options.
+    ///     Displays the help message with usage instructions and options.
     /// </summary>
     private static void DisplayHelp()
     {

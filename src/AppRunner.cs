@@ -31,13 +31,25 @@ public class AppRunner(
             var filesToProcess = new List<string>();
             if (gitMode != GitMode.None)
             {
-                var gitFiles = await gitService.GetChangedFilesAsync(gitMode);
-                filesToProcess.AddRange(
-                    gitFiles
-                        .Select(gitFile => fileService.GetFullPath(Path.Combine(folderPath, gitFile)))
-                        .Where(
-                            fullPath => fileService.Exists(fullPath) &&
-                                        IsFileMatchingExtensions(fullPath, extensionPatterns)));
+                var gitFiles = await gitService.GetChangedFilesAsync(gitMode, folderPath);
+                foreach (var gitFile in gitFiles)
+                {
+                    if (gitFile.EndsWith(" (deleted)"))
+                    {
+                        var originalPath = gitFile.Replace(" (deleted)", "");
+                        if (IsFileMatchingExtensions(originalPath, extensionPatterns))
+                        {
+                            filesToProcess.Add(gitFile);
+                        }
+                    }
+                    else
+                    {
+                        if (fileService.Exists(gitFile) && IsFileMatchingExtensions(gitFile, extensionPatterns))
+                        {
+                            filesToProcess.Add(gitFile);
+                        }
+                    }
+                }
             }
             else
             {
@@ -49,14 +61,21 @@ public class AppRunner(
             var processedFiles = 0;
             foreach (var file in filesToProcess.Distinct())
             {
-                stringBuilder.AppendLine($"--- Contents of {file} ---");
-                try
+                if (file.EndsWith(" (deleted)"))
                 {
-                    stringBuilder.AppendLine(await fileService.ReadAllTextAsync(file));
+                    stringBuilder.AppendLine($"--- {file} ---");
                 }
-                catch (Exception ex)
+                else
                 {
-                    stringBuilder.AppendLine($"Error reading file: {ex.Message}");
+                    stringBuilder.AppendLine($"--- Contents of {file} ---");
+                    try
+                    {
+                        stringBuilder.AppendLine(await fileService.ReadAllTextAsync(file));
+                    }
+                    catch (Exception ex)
+                    {
+                        stringBuilder.AppendLine($"Error reading file: {ex.Message}");
+                    }
                 }
 
                 stringBuilder.AppendLine();
@@ -89,23 +108,26 @@ public class AppRunner(
 
     private bool IsFileMatchingExtensions(string filePath, List<string> extensionPatterns)
     {
-        foreach (var pattern in extensionPatterns)
+        if (extensionPatterns.Contains("*") || extensionPatterns.Count == 0)
         {
-            if (pattern == "*")
-                return true;
-
-            var extension = fileService.GetFileExtension(filePath);
-            if (string.IsNullOrEmpty(extension))
-                return false;
-
-            extension = extension.TrimStart('.');
-            var patternExtension = pattern.TrimStart('*', '.');
-            if (extension.Equals(patternExtension, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
+            return true;
         }
 
-        return false;
+        var extension = Path.GetExtension(filePath);
+        if (string.IsNullOrEmpty(extension))
+        {
+            return false;
+        }
+
+        extension = extension.TrimStart('.');
+
+        // Check if any pattern matches the file extension
+        return extensionPatterns.Any(
+            pattern =>
+            {
+                // Remove the wildcard and dot from the pattern (*.cs -> cs)
+                var patternExt = pattern.TrimStart('*', '.');
+                return patternExt.Equals(extension, StringComparison.OrdinalIgnoreCase);
+            });
     }
 }
